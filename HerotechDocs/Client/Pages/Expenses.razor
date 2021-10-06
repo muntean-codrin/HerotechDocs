@@ -1,0 +1,449 @@
+﻿@page "/expenses"
+@using HerotechDocs.Shared;
+@using System.IO;
+@using HerotechDocs.Client.ViewModels;
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+
+<div class="table-responsive">
+    <div class="table-wrapper">
+        <div class="table-title">
+            <div class="row">
+                <div class="col-sm-6">
+                    <h2>Manager <b>Cheltuieli</b></h2>
+                </div>
+                <div class="col-sm-6">
+                    <a href="#addExpenseModal" class="btn btn-success" data-toggle="modal"><i class="material-icons">&#xE147;</i> <span>Adauga Cheltuiala</span></a>
+                    <a href="#filterExpensesModal" class="btn btn-primary" data-toggle="modal"><i class="material-icons">&#xE152;</i> <span>Filtreaza</span></a>
+                </div>
+            </div>
+        </div>
+        <table class="table table-striped table-hover">
+            <thead>
+                <tr>
+                    <th>Id Factura</th>
+                    <th>Furnizor</th>
+                    <th>Data</th>
+                    <th>Pret (RON)</th>
+                    <th>Descriere</th>
+                    <th>Contract</th>
+                    <th>Categorie</th>
+                    <th>Fisier</th>
+                    <th>Actiuni</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var expense in expenseManager.ExpensesToShow)
+                {
+                    <tr>
+                        <td>@expense.ReceiptId</td>
+                        <td>@expense.Supplier</td>
+                        <td>@DateToString(expense.Date)</td>
+                        <td>@expense.Price.ToString("F2")</td>
+                        <td>@expense.Description</td>
+                        @if (@expense.Contract != null)
+                        {
+                            <td>
+                                <a href="details/@expense.Contract.Id"> @expense.Contract.Sponsor, @DateToString(expense.Contract.Date) </a>
+                            </td>
+                        }
+                        else
+                        {
+                            <td>No contract</td>
+                        }
+
+                    <td>@expense.CategoryId</td>
+
+                        @if (expense.DatabaseFileId != null)
+                        {
+                            <td><button @onclick="() => { Download(expense.DatabaseFileId); }" class="btn btn-primary">Download</button></td>
+                        }
+                        else
+                        {
+                            <td>
+                                <InputFile OnChange="e => UpdateFile(expense, e)" placeholder="Cheltuiala" style="max-width:103px" />
+                            </td>
+                        }
+
+                        <td>
+                            <a href="#editExpenseModal" class="edit" data-toggle="modal"><i class="material-icons" data-toggle="tooltip" title="Editare" @onclick="() => SelectEditExpense(expense)">&#xE254;</i></a>
+                            <a href="#deleteExpenseModal" class="delete" data-toggle="modal"><i class="material-icons" data-toggle="tooltip" title="Stergere" @onclick="() => DeleteConfirmation(expense)">&#xE872;</i></a>
+                        </td>
+
+
+                    </tr>
+                }
+
+
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Add Expense HTML -->
+<div id="addExpenseModal" class="modal fade">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            @if (expenseManager != null)
+            {
+                <EditForm Model="@createExpenseViewModel" OnValidSubmit="Submit">
+                    <div class="modal-header">
+                        <h4 class="modal-title">Adauga Cheltuiala</h4>
+                        <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                    </div>
+
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    @if (failAdd)
+                    {
+                        <p class="text-danger"><small>Eroare la adaugarea cheltuielii!</small></p>
+                    }
+
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <div class="form-row">
+                                <div class="col">
+                                    <InputText @bind-Value="createExpenseViewModel.ReceiptId" DisplayName="Id Factura" class="form-control" placeholder="Id Factura" />
+                                </div>
+                                <div class="col">
+                                    <InputNumber @bind-Value="createExpenseViewModel.Price" DisplayName="Pret" class="form-control" placeholder="Pret" />
+                                </div>
+                            </div>
+
+                        </div>
+                        <div class="form-group">
+                            <div class="form-row">
+                                <div class="col">
+                                    <InputText @bind-Value="createExpenseViewModel.Supplier" DisplayName="Furnizor" class="form-control" placeholder="Furnizor" />
+                                </div>
+                                <div class="col">
+                                    <InputDate @bind-Value="createExpenseViewModel.Date" class="form-control" palceholder="Data" />
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <div class="form-group">
+                            <InputText @bind-Value="createExpenseViewModel.Description" DisplayName="Descriere" class="form-control" placeholder="Descriere" />
+                        </div>
+
+
+                        <div class="form-group">
+                            <div class="form-row">
+                                <div class="col">
+                                    <InputSelect @bind-Value="createExpenseViewModel.CategoryId" class="form-control">
+                                        @if (createExpenseViewModel.CategoryId == null)
+                                            {
+                                            <option value="">Categorie</option>
+                                            }
+
+                                        @foreach (var category in expenseManager.CategoryList)
+                                            {
+                                            <option value="@category.Id">@category.Id</option>
+                                            }
+                                    </InputSelect>
+                                </div>
+                                <div class="col">
+                                    <InputSelect @bind-Value="createExpenseViewModel.ContractId" class="form-control">
+                                        @if (createExpenseViewModel.ContractId == null)
+                                            {
+                                            <option value="">Contract</option>
+                                            }
+
+                                        @foreach (var contract in expenseManager.ContractList)
+                                            {
+                                            <option value="@contract.Id">@contract.Sponsor, @DateToString(contract.Date)</option>
+                                            }
+                                    </InputSelect>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <InputFile OnChange="@FileInput" class="form-control" />
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <input type="button" class="btn btn-default" data-dismiss="modal" value="Renunta">
+                        <input type="submit" class="btn btn-success" disabled="@CreateTaskRunning" value="Adauga" />
+                    </div>
+                </EditForm>
+            }
+        </div>
+    </div>
+</div>
+
+
+<!-- Filter Expenses HTML -->
+<div id="filterExpensesModal" class="modal fade">
+    <div class="modal-dialog">
+
+
+        <EditForm Model="@createExpenseViewModel" OnValidSubmit="expenseManager.UpdateDate">
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <h4 class="modal-title">Filtreaza Cheltuielile</h4>
+                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="form-group">
+                        <InputDate @bind-Value="expenseManager.fromDate" class="form-control" />
+                    </div>
+                    <div class="form-group">
+                        <InputDate @bind-Value="expenseManager.toDate" class="form-control" />
+                    </div>
+
+                </div>
+
+                <div class="modal-footer">
+                    <input type="button" class="btn btn-default" data-dismiss="modal" value="Renunta">
+                    <input type="submit" class="btn btn-success" value="Aplica" />
+                </div>
+
+
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+
+<!-- Delete Expense HTML -->
+<div id="deleteExpenseModal" class="modal fade">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form>
+                <div class="modal-header">
+                    <h4 class="modal-title">Sterge cheltuiala</h4>
+                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                </div>
+                <div class="modal-body">
+                    @if (toDelete != null)
+                    {
+                        <p> Esti sigur ca vrei sa stergi cheltuiala <b>@toDelete.Supplier</b> in valoare de <b>@toDelete.Price lei</b> ?</p>
+                    }
+                    @if (failDelete)
+                    {
+                        <p class="text-danger"><small>Eroare la stergerea cheltuielii!</small></p>
+                    }
+
+                </div>
+                <div class="modal-footer">
+                    <input type="button" class="btn btn-default" data-dismiss="modal" value="Renunta">
+                    <input type="button" class="btn btn-danger" value="Sterge" @onclick="DeleteExpense">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Expense HTML -->
+<div id="editExpenseModal" class="modal fade">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            @if (expenseManager != null && editExpenseViewModel != null)
+            {
+                <EditForm Model="@editExpenseViewModel" OnValidSubmit="Edit">
+                    <div class="modal-header">
+                        <h4 class="modal-title">Editeaza Cheltuiala</h4>
+                        <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                    </div>
+
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    @if (failEdit)
+                    {
+                        <p class="text-danger"><small>Eroare la editarea cheltuielii!</small></p>
+                    }
+
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <div class="form-row">
+                                <div class="col">
+                                    <InputText @bind-Value="editExpenseViewModel.ReceiptId" DisplayName="Id Factura" class="form-control" placeholder="Id Factura" />
+                                </div>
+                                <div class="col">
+                                    <InputNumber @bind-Value="editExpenseViewModel.Price" DisplayName="Pret" class="form-control" placeholder="Pret" />
+                                </div>
+                            </div>
+
+                        </div>
+                        <div class="form-group">
+                            <div class="form-row">
+                                <div class="col">
+                                    <InputText @bind-Value="editExpenseViewModel.Supplier" DisplayName="Furnizor" class="form-control" placeholder="Furnizor" />
+                                </div>
+                                <div class="col">
+                                    <InputDate @bind-Value="editExpenseViewModel.Date" class="form-control" palceholder="Data" />
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <div class="form-group">
+                            <InputText @bind-Value="editExpenseViewModel.Description" DisplayName="Descriere" class="form-control" placeholder="Descriere" />
+                        </div>
+
+
+                        <div class="form-group">
+                            <div class="form-row">
+
+                                <InputSelect @bind-Value="editExpenseViewModel.CategoryId" class="form-control">
+                                    @if (editExpenseViewModel.CategoryId == null)
+                                        {
+                                        <option value="">Categorie</option>
+                                        }
+
+                                    @foreach (var category in expenseManager.CategoryList)
+                                        {
+                                        <option value="@category.Id">@category.Id</option>
+                                        }
+                                </InputSelect>
+
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <InputFile OnChange="@FileInputEdit" class="form-control" />
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <input type="button" class="btn btn-default" data-dismiss="modal" value="Renunta">
+                        <input type="submit" class="btn btn-success" disabled="@CreateTaskRunning" value="Salveaza" />
+                    </div>
+                </EditForm>
+            }
+        </div>
+    </div>
+</div>
+
+
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    private CreateExpenseViewModel createExpenseViewModel = new CreateExpenseViewModel();
+    private CreateExpenseViewModel editExpenseViewModel = new CreateExpenseViewModel();
+
+    private ExpenseManager expenseManager;
+
+    private bool CreateTaskRunning = false;
+
+    private Expense toDelete;
+    private bool failDelete;
+
+    private Expense toEdit;
+    private bool failEdit;
+
+    private bool failAdd;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await authenticationStateTask;
+        expenseManager = new ExpenseManager(authState, NavigationManager, Http, JSRuntime);
+        expenseManager.UIUpdated += () => { StateHasChanged(); };
+    }
+
+    private void Download(int? fileId)
+    {
+        expenseManager.DownloadExpenseFile(fileId);
+    }
+
+
+
+    private void DeleteConfirmation(Expense expense)
+    {
+        failDelete = false;
+        toDelete = expense;
+    }
+
+    private async void DeleteExpense()
+    {
+        failDelete = !(await expenseManager.DeleteExpense(toDelete));
+        expenseManager.UpdateUI();
+    }
+
+    private void SelectEditExpense(Expense expense)
+    {
+        failEdit = false;
+        toEdit = expense;
+        editExpenseViewModel = new CreateExpenseViewModel()
+        {
+            ReceiptId = toEdit.ReceiptId,
+            Price = toEdit.Price,
+            Description = toEdit.Description,
+            Supplier = toEdit.Supplier,
+            Date = toEdit.Date,
+            CategoryId = toEdit.CategoryId,
+            ContractId = toEdit.ContractId
+        };
+
+    }
+
+
+    private async void Edit()
+    {
+        toEdit.ReceiptId = editExpenseViewModel.ReceiptId;
+        toEdit.Price = (double)editExpenseViewModel.Price;
+        toEdit.Description = editExpenseViewModel.Description;
+        toEdit.Supplier = editExpenseViewModel.Supplier;
+        toEdit.Date = editExpenseViewModel.Date;
+        toEdit.CategoryId = editExpenseViewModel.CategoryId;
+        toEdit.ContractId = (int)editExpenseViewModel.ContractId;
+        if (editExpenseViewModel.File == null)
+        {
+            toEdit.File = null;
+        }
+        else
+        {
+            toEdit.File = new DatabaseFile();
+            toEdit.File.Name = editExpenseViewModel.File.Name;
+            toEdit.File.UploadDate = DateTime.Now;
+
+            var stream = editExpenseViewModel.File.OpenReadStream(editExpenseViewModel.File.Size);
+            MemoryStream ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            toEdit.File.Data = ms.ToArray();
+        }
+
+        failEdit = !(await expenseManager.UpdateExpense(toEdit));
+        expenseManager.UpdateUI();
+    }
+
+    private async void Submit()
+    {
+        failAdd = false;
+        CreateTaskRunning = true;
+        failAdd = !(await expenseManager.AddExpense(createExpenseViewModel));
+        createExpenseViewModel = new CreateExpenseViewModel();
+        CreateTaskRunning = false;
+        expenseManager.UpdateUI();
+    }
+
+    private void FileInput(InputFileChangeEventArgs e)
+    {
+        createExpenseViewModel.File = e.File;
+    }
+
+
+    private void FileInputEdit(InputFileChangeEventArgs e)
+    {
+        editExpenseViewModel.File = e.File;
+    }
+
+    private void UpdateFile(Expense expense, InputFileChangeEventArgs e)
+    {
+        expenseManager.UpdateExpenseFile(expense, e.File);
+    }
+
+    string DateToString(DateTime d)
+    {
+        return $"{d.Day}/{d.Month}/{d.Year}";
+    }
+
+}

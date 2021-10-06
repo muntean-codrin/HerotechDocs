@@ -1,0 +1,235 @@
+﻿@page "/details/{Id:int}"
+@using HerotechDocs.Shared;
+@using System.IO;
+@using HerotechDocs.Client.ViewModels;
+@using Newtonsoft.Json;
+@inject HttpClient Http
+@inject IJSRuntime JSRuntimee
+@inject NavigationManager NavigationManager
+@using System.IO.Compression;
+
+<h2>Detalii contract</h2>
+
+@if (expenseList == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <ul>
+        <li>Sponsor: @contract.Sponsor</li>
+        <li>Data: @DateToString(contract.Date)</li>
+        <li>Valoare (RON): @contract.Amount.ToString("F2")</li>
+        <li>Cheltuiti (RON): @spent.ToString("F2")</li>
+        <li>Obiectul contractului: @contract.Purpose</li>
+        <li>Incheiat: @contract.Concluded</li>
+
+    </ul>
+    <div style="padding: 1.1rem 0rem;">
+        <button class="btn btn-secondary" @onclick="DownloadExcel">Descarca spreadsheet</button>
+        <button class="btn btn-secondary" @onclick="DownloadArchive">Descarca arhiva</button>
+    </div>
+    @if (beginDownload && fileCount > 0)
+    {
+
+        <div class="progress">
+            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: @(downloadedCount * 100 / fileCount)%">@(downloadedCount * 100 / fileCount)%</div>
+        </div>
+    }
+
+    <h2>Cheltuieli</h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Id Factura</th>
+                <th>Furnizor</th>
+                <th>Data</th>
+                <th>Pret (RON)</th>
+                <th>Descriere</th>
+                <th>Categorie</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var expense in expenseList)
+            {
+                <tr>
+                    <td>@expense.ReceiptId</td>
+                    <td>@expense.Supplier</td>
+                    <td>@DateToString(expense.Date)</td>
+                    <td>@expense.Price.ToString("F2")</td>
+                    <td>@expense.Description</td>
+                    <td>@expense.CategoryId</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+
+    <div class="row">
+        <div class="col-6">
+            <h3>Bunuri materiale </h3>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Serie</th>
+                        <th>Nume</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in itemList)
+                    {
+                        <tr>
+                            <td>@item.Id</td>
+                            <td>@item.Name</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="col-6">
+            <h3>Adauga item </h3>
+            <EditForm Model="@createItemViewModel" OnValidSubmit="Submit">
+
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="form-row">
+                    <div class="form-group col-4">
+                        <InputText @bind-Value="createItemViewModel.Name" class="form-control" placeholder="Nume" />
+                    </div>
+                    <div class="form-group col-2">
+                        <button type="submit" class="btn btn-primary" disabled="@CreateTaskRunning">Adauga</button>
+                    </div>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private Contract contract;
+    private List<Expense> expenseList;
+    private List<Item> itemList;
+    private double spent;
+    private bool beginDownload = false;
+    private int fileCount = 0;
+    private int downloadedCount;
+    private CreateItemViewModel createItemViewModel = new CreateItemViewModel();
+    private bool CreateTaskRunning = false;
+    [CascadingParameter] private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await authenticationStateTask;
+        var user = authState.User;
+
+        if (!user.Identity.IsAuthenticated)
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        contract = await Http.GetFromJsonAsync<Contract>($"api/Contracts/{Id}");
+        itemList = (await Http.GetFromJsonAsync<List<Item>>("api/Items")).Where(a => a.ContractId == Id).ToList();
+        expenseList = (await Http.GetFromJsonAsync<List<Expense>>("api/Expenses")).Where(a => a.ContractId == Id).ToList();
+        expenseList.ForEach(a => spent += a.Price);
+
+
+
+        foreach (var expense in expenseList)
+        {
+            if (expense.DatabaseFileId != null)
+            {
+                fileCount++;
+            }
+        }
+    }
+
+    private async void Submit()
+    {
+        Item item = new Item();
+        item.Name = createItemViewModel.Name;
+        item.ContractId = contract.Id;
+
+        var response = await Http.PostAsJsonAsync<Item>("api/Items", item);
+
+        if (response.IsSuccessStatusCode)
+        {
+            var stringResponse = await response.Content.ReadAsStringAsync();
+            var newItem = JsonConvert.DeserializeObject<Item>(stringResponse);
+            itemList.Add(newItem);
+            createItemViewModel = new CreateItemViewModel();
+
+            StateHasChanged();
+        }
+        else
+        {
+            await JSRuntimee.InvokeAsync<object>("alert", "Error adding item.");
+        }
+    }
+
+    private async void DownloadExcel()
+    {
+        var file = await Http.GetFromJsonAsync<DatabaseFile>($"api/ContractDetails/{Id}");
+
+        await JSRuntimee.InvokeVoidAsync("BlazorDownloadFile", $"{contract.Sponsor} {contract.Date.ToString("d")}.xlsx", "text/plain", file.Data);
+
+    }
+
+    private async void DownloadArchive()
+    {
+        downloadedCount = 0;
+        beginDownload = true;
+        List<DatabaseFile> databaseFiles = new List<DatabaseFile>();
+
+        foreach (var expense in expenseList)
+        {
+            if (expense.DatabaseFileId != null)
+            {
+                databaseFiles.Add(await Http.GetFromJsonAsync<DatabaseFile>($"api/DatabaseFiles/{expense.DatabaseFileId}"));
+                downloadedCount++;
+                StateHasChanged();
+                await Task.Delay(50);
+            }
+        }
+
+        byte[] compressedBytes;
+        string fileNameZip = "Export_" + contract.Sponsor + ".zip";
+
+        using (var outStream = new MemoryStream())
+        {
+            using (var archive = new ZipArchive(outStream, ZipArchiveMode.Create, true))
+            {
+                foreach (var file in databaseFiles)
+                {
+                    var fileInArchive = archive.CreateEntry(file.Name, CompressionLevel.Optimal);
+                    using (var entryStream = fileInArchive.Open())
+                    using (var fileToCompressStream = new MemoryStream(file.Data))
+                    {
+                        fileToCompressStream.CopyTo(entryStream);
+                    }
+                }
+            }
+            compressedBytes = outStream.ToArray();
+        }
+
+        await JSRuntimee.InvokeVoidAsync("BlazorDownloadFile", fileNameZip, "text/plain", compressedBytes);
+
+        await Task.Delay(1000);
+
+        beginDownload = false;
+        StateHasChanged();
+
+    }
+
+    string DateToString(DateTime d)
+    {
+        return $"{d.Day}/{d.Month}/{d.Year}";
+    }
+
+}

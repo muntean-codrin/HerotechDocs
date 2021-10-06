@@ -1,0 +1,152 @@
+﻿@page "/"
+@page "/home"
+@using HerotechDocs.Shared
+@using System.IO
+@using System.IO.Compression;
+@inject HttpClient Http
+@inject IJSRuntime JSRuntimee
+@inject NavigationManager NavigationManager
+
+@if (state == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+<div class="table-wrapper">
+    <div class="table-title">
+        <div class="row">
+            <div class="col-sm-6">
+                <h2><b>Home</b></h2>
+            </div>
+        </div>
+    </div>
+</div>
+    <div class="container-fluid">
+        <ul>
+            <li>Total obtinut: @state.Earnt.ToString("F2") RON</li>
+            <li>Total cheltuit: @state.Spent.ToString("F2") RON </li>
+            <li>Diferenta: @((state.Earnt - state.Spent).ToString("F2")) RON</li>
+        </ul>
+
+        <div class="progress">
+            <div class="progress-bar" role="progressbar" style="width: @state.Percentage()%;" aria-valuenow="@state.Spent" aria-valuemin="0" aria-valuemax="@state.Earnt">@state.Percentage()%</div>
+        </div>
+        <br />
+        <h2>Descarca fisere</h2>
+        <EditForm Model="date" OnSubmit="Download">
+            <div class="form-row">
+                <div class="form-group col-md-3">
+                    <InputSelect @bind-Value="date" class="form-control">
+                        @foreach (var possibleDate in possibleDates)
+                            {
+                            <option value="@possibleDate">@possibleDate.ToString("yyyy MMMM")</option>
+                            }
+                    </InputSelect>
+                </div>
+                <div class="form-group col-md-3">
+                    <button class="btn btn-primary" type="submit" disabled="@Downloading">Descarca</button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> authenticationStateTask { get; set; }
+    FinancialState state;
+
+    DateTime date = DateTime.Now;
+    List<DateTime> possibleDates;
+
+    bool Downloading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await authenticationStateTask;
+        var user = authState.User;
+
+        if (!user.Identity.IsAuthenticated)
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        possibleDates = new List<DateTime>();
+        DateTime now = DateTime.Today;
+        DateTime startTime = new DateTime(2019, 1, 1);
+
+        while (now > startTime)
+        {
+            possibleDates.Add(now);
+            now = now.AddMonths(-1);
+        }
+
+
+        state = await Http.GetFromJsonAsync<FinancialState>("api/Finances");
+    }
+
+
+
+    private async void Download()
+    {
+        Downloading = true;
+        DateTime fromDate, toDate;
+        toDate = (new DateTime(date.Year, date.Month, 1).AddMonths(1).AddDays(-1));
+        fromDate = new DateTime(date.Year, date.Month, 1);
+
+        //get all expenses and contracts from the month
+        var expenseList = (await Http.GetFromJsonAsync<List<Expense>>("api/Expenses")).Where(e => e.Date >= fromDate.Date && e.Date <= toDate.Date).ToList();
+        var contractList = (await Http.GetFromJsonAsync<List<Contract>>("api/Contracts")).Where(e => e.Date >= fromDate.Date && e.Date <= toDate.Date).ToList();
+        var databaseFiles = new List<KeyValuePair<string, DatabaseFile>>();
+
+        foreach (var expense in expenseList)
+        {
+            if (expense.DatabaseFileId != null)
+            {
+                databaseFiles.Add(new KeyValuePair<string, DatabaseFile>("Cheltuieli", await Http.GetFromJsonAsync<DatabaseFile>($"api/DatabaseFiles/{expense.DatabaseFileId}")));
+            }
+        }
+
+        foreach (var contract in contractList)
+        {
+            if (contract.DatabaseFileId != null)
+            {
+                databaseFiles.Add(new KeyValuePair<string, DatabaseFile>("Contracte", await Http.GetFromJsonAsync<DatabaseFile>($"api/DatabaseFiles/{contract.DatabaseFileId}")));
+            }
+        }
+
+        byte[] compressedBytes;
+        string fileNameZip = "Export_" + DateToString(toDate) + ".zip";
+
+        using (var outStream = new MemoryStream())
+        {
+            using (var archive = new ZipArchive(outStream, ZipArchiveMode.Create, true))
+            {
+                foreach (var file in databaseFiles)
+                {
+                    var fileInArchive = archive.CreateEntry($"{file.Key}/{file.Value.Name}", CompressionLevel.Optimal);
+                    using (var entryStream = fileInArchive.Open())
+                    using (var fileToCompressStream = new MemoryStream(file.Value.Data))
+                    {
+                        fileToCompressStream.CopyTo(entryStream);
+                    }
+                }
+            }
+            compressedBytes = outStream.ToArray();
+        }
+
+        await JSRuntimee.InvokeVoidAsync("BlazorDownloadFile", fileNameZip, "text/plain", compressedBytes);
+
+        Downloading = false;
+        StateHasChanged();
+
+    }
+
+    string DateToString(DateTime d)
+    {
+        return $"{d.Day}/{d.Month}/{d.Year}";
+    }
+
+
+}

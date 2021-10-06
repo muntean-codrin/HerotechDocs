@@ -1,0 +1,238 @@
+﻿@page "/categories"
+@using HerotechDocs.Shared;
+@using System.IO;
+@using HerotechDocs.Client.ViewModels;
+@inject HttpClient Http
+@inject IJSRuntime JSRuntimee
+@inject NavigationManager NavigationManager
+
+
+
+<div class="table-responsive">
+    <div class="table-wrapper">
+        <div class="table-title">
+            <div class="row">
+                <div class="col-sm-6">
+                    <h2>Manager <b>Categorii</b></h2>
+                </div>
+                <div class="col-sm-6">
+                    <a href="#addCategoryModal" class="btn btn-success" data-toggle="modal"><i class="material-icons">&#xE147;</i> <span>Adauga Categorie</span></a>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-6">
+                <table class="table table-striped table-hover">
+                    <thead>
+                        <tr>
+                            <th>Categorie</th>
+                            <th>Actiuni</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+
+                        @foreach (var category in categoryList)
+                        {
+                            <tr>
+                                <td>@category.Id</td>
+                                <td>
+                                    <a href="#deleteCategoryModal" class="delete" data-toggle="modal"><i class="material-icons" data-toggle="tooltip" title="Stergere" @onclick="() => SelectDeleteCategory(category)">&#xE872;</i></a>
+                                </td>
+
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Add Category HTML -->
+<div id="addCategoryModal" class="modal fade">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <EditForm Model="@toAdd" OnValidSubmit="AddCategory">
+                <div class="modal-header">
+                    <h4 class="modal-title">Adauga Categorie</h4>
+                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                </div>
+
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="modal-body">
+                    @if (failAdd)
+                    {
+                        <p class="text-danger"><small>Eroare la adaugarea categoriei!</small></p>
+                    }
+
+                    <div class="form-group">
+                        <InputText @bind-Value="toAdd.Id" class="form-control" placeholder="Categorie"></InputText>
+                    </div>
+
+                </div>
+
+                <div class="modal-footer">
+                    <input type="button" class="btn btn-default" data-dismiss="modal" value="Renunta">
+                    <input type="submit" class="btn btn-success" value="Adauga" />
+                </div>
+            </EditForm>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Category HTML -->
+<div id="deleteCategoryModal" class="modal fade">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form>
+                <div class="modal-header">
+                    <h4 class="modal-title">Sterge categoria</h4>
+                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                </div>
+                <div class="modal-body">
+                    @if (toDelete != null)
+                    {
+                        <p> Esti sigur ca vrei sa stergi categoria <b>@toDelete.Id ?</b></p>
+                    }
+                    @if (failDelete)
+                    {
+                        <p class="text-danger"><small>Eroare la stergerea categoriei!</small></p>
+                    }
+
+                </div>
+                <div class="modal-footer">
+                    <input type="button" class="btn btn-default" data-dismiss="modal" value="Renunta">
+                    <input type="button" class="btn btn-danger" value="Sterge" @onclick="DeleteCategory">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+<!-- Edit Category HTML
+<div id="editCategoryModal" class="modal fade">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <EditForm Model="@toEdit" OnValidSubmit="EditCategory">
+                <div class="modal-header">
+                    <h4 class="modal-title">Editeaza Categoria</h4>
+                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                </div>
+
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="modal-body">
+                    @if (failEdit)
+                    {
+                        <p class="text-danger"><small>Eroare la editarea categoriei!</small></p>
+                    }
+
+                    <div class="form-group">
+                        <InputText @bind-Value="toEdit.Id" class="form-control" placeholder="Categorie"></InputText>
+                    </div>
+
+                </div>
+
+                <div class="modal-footer">
+                    <input type="button" class="btn btn-default" data-dismiss="modal" value="Renunta">
+                    <input type="submit" class="btn btn-success" value="Salveaza" />
+                </div>
+            </EditForm>
+        </div>
+    </div>
+</div>
+-->
+
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    private List<Category> categoryList = new List<Category>();
+    private Category toAdd = new Category();
+    private Category toDelete = new Category();
+    //private Category toEdit = new Category();
+    bool failDelete = false;
+    bool failAdd = false;
+    //bool failEdit = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await authenticationStateTask;
+        var user = authState.User;
+
+        if (!user.Identity.IsAuthenticated)
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        categoryList = await Http.GetFromJsonAsync<List<Category>>("api/Categories");
+    }
+
+    private async void AddCategory()
+    {
+        failAdd = false;
+        var response = await Http.PostAsJsonAsync<Category>("api/Categories", toAdd);
+        if (response.IsSuccessStatusCode)
+        {
+            categoryList.Add(toAdd);
+            toAdd = new Category();
+            await JSRuntimee.InvokeVoidAsync("CloseModal", "#addCategoryModal");
+        }
+        else
+        {
+            failAdd = true;
+        }
+
+        StateHasChanged();
+
+    }
+
+    /*private void SelectEditCategory(Category category)
+    {
+        failEdit = false;
+        toEdit = category;
+        StateHasChanged();
+    }
+
+    private async void EditCategory()
+    {
+        Console.WriteLine(toEdit.Id);
+        var response = await Http.PutAsJsonAsync<Category>($"api/Categories/{toEdit.Id}", toEdit);
+        if (response.IsSuccessStatusCode)
+        {
+            await JSRuntimee.InvokeVoidAsync("CloseModal", "#editCategoryModal");
+        }
+        else
+        {
+            failEdit = true;
+        }
+        StateHasChanged();
+    }*/
+
+    private void SelectDeleteCategory(Category category)
+    {
+        failDelete = false;
+        toDelete = category;
+    }
+
+    private async void DeleteCategory()
+    {
+        var response = await Http.DeleteAsync($"api/Categories/{toDelete.Id}");
+        if (response.IsSuccessStatusCode)
+        {
+            categoryList.Remove(toDelete);
+            await JSRuntimee.InvokeVoidAsync("CloseModal", "#deleteCategoryModal");
+        }
+        else
+        {
+            failDelete = true;
+        }
+        StateHasChanged();
+    }
+}

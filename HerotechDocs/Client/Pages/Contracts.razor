@@ -1,0 +1,387 @@
+﻿@page "/contracts"
+@using HerotechDocs.Shared;
+@using System.IO;
+@using HerotechDocs.Client.ViewModels;
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+
+<div class="table-responsive">
+    <div class="table-wrapper">
+        <div class="table-title">
+            <div class="row">
+                <div class="col-sm-6">
+                    <h2>Manager <b>Contracte</b></h2>
+                </div>
+                <div class="col-sm-6">
+                    <a href="#addContractModal" class="btn btn-success" data-toggle="modal"><i class="material-icons">&#xE147;</i> <span>Adauga Contract</span></a>
+                </div>
+            </div>
+        </div>
+        <table class="table table-striped table-hover">
+            <thead>
+                <tr>
+                    <th>Sponsor</th>
+                    <th>Data</th>
+                    <th>Valoare</th>
+                    <th>Descriere</th>
+                    <th>Incheiat</th>
+                    <th>Fisier</th>
+                    <th>Actiuni</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                @foreach (var contract in contractManager.ContractList)
+                {
+                    <tr>
+                        <td>@contract.Sponsor</td>
+                        <td>@DateToString(contract.Date)</td>
+                        <td>@contract.Amount.ToString("F2")</td>
+                        <td>@contract.Purpose</td>
+                        <td>
+                            <EditForm Model="contract">
+                                <InputCheckbox @bind-Value="@contract.Concluded" @onclick="() => TickConclude(contract)"></InputCheckbox>
+                            </EditForm>
+                        </td>
+                        <td>
+                            @if (contract.DatabaseFileId != null)
+                            {
+                                <button class="btn btn-primary" @onclick="() => Download(contract.DatabaseFileId)">Download</button>
+
+                            }
+                            else
+                            {
+
+                                <InputFile OnChange="e => UpdateFile(contract, e)" style="max-width:103px" />
+                            }
+                        </td>
+
+                        <td style="width: 15%">
+                            <a href="details/@contract.Id" class="view"><i class="material-icons" data-toggle="tooltip" title="Detalii">&#xE8f4;</i></a>
+                            <a href="#addItemToContractModal" class="add" data-toggle="modal"><i class="material-icons" data-toggle="tooltip" title="Adauga item" @onclick="() => SelectContractToAddItem(contract)">&#xEA20;</i></a>
+                            <a href="#editContractModal" class="edit" data-toggle="modal"><i class="material-icons" data-toggle="tooltip" title="Editare" @onclick="() => SelectEditContract(contract)">&#xE254;</i></a>
+                            <a href="#deleteContractModal" class="delete" data-toggle="modal"><i class="material-icons" data-toggle="tooltip" title="Stergere" @onclick="() => DeleteConfirmation(contract)">&#xE872;</i></a>
+                        </td>
+
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+
+<!-- Add Contract HTML -->
+<div id="addContractModal" class="modal fade">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <EditForm Model="@createContractViewModel" OnValidSubmit="Submit">
+                <div class="modal-header">
+                    <h4 class="modal-title">Adauga Contract</h4>
+                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                </div>
+
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                @if (failAddContract)
+                {
+                    <p class="text-danger"><small>Eroare la adaugarea contractului!</small></p>
+                }
+
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Sponsor</label>
+                        <InputText @bind-Value="@createContractViewModel.Sponsor" class="form-control"></InputText>
+                    </div>
+                    <div class="form-group">
+                        <label>Valoare</label>
+                        <InputNumber @bind-Value="createContractViewModel.Amount" class="form-control"></InputNumber>
+                    </div>
+                    <div class="form-group">
+                        <label>Descriere</label>
+                        <InputText @bind-Value="createContractViewModel.Purpose" class="form-control"></InputText>
+                    </div>
+                    <div class="form-group">
+                        <label>Data</label>
+                        <InputDate @bind-Value="createContractViewModel.Date" class="form-control" />
+                    </div>
+                    <div class="form-group">
+                        <label>Fisier</label>
+                        <InputFile OnChange="@FileInput" placeholder="Contract sponsorizare" class="form-control" type="file" />
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <input type="button" class="btn btn-default" data-dismiss="modal" value="Renunta">
+                    <input type="submit" class="btn btn-success" disabled="@CreateTaskRunning" value="Adauga" />
+                </div>
+            </EditForm>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Contract HTML -->
+<div id="editContractModal" class="modal fade">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            @if (@editContractViewModel != null)
+            {
+                <EditForm Model="@editContractViewModel" OnValidSubmit="Edit">
+                    <div class="modal-header">
+                        <h4 class="modal-title">Editeaza contractul</h4>
+                        <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                    </div>
+                    @if (failEdit)
+                    {
+                        <p class="text-danger"><small>Eroare la editarea contractului!</small></p>
+                    }
+
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label>Sponsor</label>
+                            <InputText @bind-Value="editContractViewModel.Sponsor" class="form-control"></InputText>
+                        </div>
+                        <div class="form-group">
+                            <label>Valoare</label>
+                            <InputNumber @bind-Value="editContractViewModel.Amount" class="form-control"></InputNumber>
+                        </div>
+                        <div class="form-group">
+                            <label>Descriere</label>
+                            <InputText @bind-Value="editContractViewModel.Purpose" class="form-control"></InputText>
+                        </div>
+                        <div class="form-group">
+                            <label>Data</label>
+                            <InputDate @bind-Value="editContractViewModel.Date" class="form-control" />
+                        </div>
+                        <div class="form-group">
+                            <label>Fisier</label>
+                            <InputFile OnChange="@FileInputEdit" class="form-control" type="file" />
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <input type="button" class="btn btn-default" data-dismiss="modal" value="Renunta">
+                        <input type="button" class="btn btn-success" disabled="@CreateTaskRunning" value="Salveaza" @onclick="Edit" />
+                    </div>
+                </EditForm>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Delete Contract HTML -->
+<div id="deleteContractModal" class="modal fade">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form>
+                <div class="modal-header">
+                    <h4 class="modal-title">Sterge contractul</h4>
+                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                </div>
+                <div class="modal-body">
+                    @if (toDelete != null)
+                    {
+                        <p> Esti sigur ca vrei sa stergi contractul <b>@toDelete.Sponsor ?</b></p>
+                    }
+                    @if (failDelete)
+                    {
+                        <p class="text-danger"><small>Eroare la stergerea contractului!</small></p>
+                    }
+
+                </div>
+                <div class="modal-footer">
+                    <input type="button" class="btn btn-default" data-dismiss="modal" value="Renunta">
+                    <input type="button" class="btn btn-danger" value="Sterge" @onclick="Delete">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Item To Contract HTML -->
+<div id="addItemToContractModal" class="modal fade">
+    <div class="modal-dialog">
+        <div class="modal-content">
+
+
+            <EditForm Model="@createItemViewModel" OnValidSubmit="Edit">
+                <div class="modal-header">
+                    <h4 class="modal-title">Adauga item</h4>
+                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                </div>
+
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="modal-body">
+                    @if (addItemContract != null)
+                    {
+                        <p>Adauga un item pentru contractul <b>@addItemContract.Sponsor</b></p>
+                    }
+                    <div class="form-group">
+                        <InputText @bind-Value="createItemViewModel.Name" class="form-control" placeholder="Item" />
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <input type="button" class="btn btn-default" data-dismiss="modal" value="Renunta">
+                    <input type="button" class="btn btn-success" disabled="@CreateTaskRunning" value="Adauga" @onclick="AddItem" />
+                </div>
+            </EditForm>
+
+        </div>
+    </div>
+</div>
+
+
+
+@code {
+
+    [CascadingParameter] private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    private ContractManager contractManager;
+
+    private bool CreateTaskRunning = false;
+
+    private CreateContractViewModel createContractViewModel = new CreateContractViewModel();
+    private CreateContractViewModel editContractViewModel = new CreateContractViewModel();
+    private CreateItemViewModel createItemViewModel = new CreateItemViewModel();
+
+    private Contract toDelete;
+    private Contract toEdit;
+    private Contract addItemContract;
+    private bool failDelete = false;
+    private bool failEdit = false;
+    private bool failAddContract = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await authenticationStateTask;
+        contractManager = new ContractManager(authState, NavigationManager, Http, JSRuntime);
+        contractManager.UIUpdated += () => { StateHasChanged(); };
+    }
+
+    private async void Submit()
+    {
+        failAddContract = false;
+        CreateTaskRunning = true;
+
+        failAddContract = !(await contractManager.AddContract(createContractViewModel));
+        createContractViewModel = new CreateContractViewModel();
+        CreateTaskRunning = false;
+        contractManager.UpdateUI();
+
+    }
+
+    private async void AddItem()
+    {
+        if (string.IsNullOrWhiteSpace(createItemViewModel.Name))
+            return;
+        Item item = new Item();
+        item.Name = createItemViewModel.Name;
+        item.ContractId = addItemContract.Id;
+        bool success = (await contractManager.AddItemToContract(item));
+        if (success)
+        {
+            createItemViewModel.Name = "";
+            contractManager.UpdateUI();
+        }
+
+    }
+
+    private void SelectEditContract(Contract contract)
+    {
+        failEdit = false;
+        toEdit = contract;
+        editContractViewModel = new CreateContractViewModel()
+        {
+            Sponsor = contract.Sponsor,
+            Date = contract.Date,
+            Amount = contract.Amount,
+            Purpose = contract.Purpose
+        };
+
+    }
+
+    private void SelectContractToAddItem(Contract contract)
+    {
+        addItemContract = contract;
+    }
+
+    private async void Edit()
+    {
+        toEdit.Sponsor = editContractViewModel.Sponsor;
+        toEdit.Date = editContractViewModel.Date;
+        toEdit.Amount = (double)editContractViewModel.Amount;
+        toEdit.Purpose = editContractViewModel.Purpose;
+        if (editContractViewModel.File == null)
+        {
+            toEdit.File = null;
+        }
+        else
+        {
+            toEdit.File = new DatabaseFile();
+            toEdit.File.Name = editContractViewModel.File.Name;
+            toEdit.File.UploadDate = DateTime.Now;
+
+            var stream = editContractViewModel.File.OpenReadStream(editContractViewModel.File.Size);
+            MemoryStream ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            toEdit.File.Data = ms.ToArray();
+        }
+
+        failEdit = !(await contractManager.UpdateContract(toEdit));
+        contractManager.UpdateUI();
+    }
+
+    private async void TickConclude(Contract contract)
+    {
+        contract.Concluded = !contract.Concluded;
+        await contractManager.UpdateContract(contract);
+    }
+
+    private void Download(int? fileId)
+    {
+        contractManager.DownloadContractFile(fileId);
+    }
+
+    private void DeleteConfirmation(Contract contract)
+    {
+        failDelete = false;
+        toDelete = contract;
+    }
+
+    private async void Delete()
+    {
+        failDelete = !(await contractManager.DeleteContract(toDelete));
+        contractManager.UpdateUI();
+    }
+
+    private void FileInput(InputFileChangeEventArgs e)
+    {
+        createContractViewModel.File = e.File;
+    }
+    private void FileInputEdit(InputFileChangeEventArgs e)
+    {
+        editContractViewModel.File = e.File;
+    }
+
+
+
+    private void UpdateFile(Contract contract, InputFileChangeEventArgs e)
+    {
+        contractManager.UpdateContractFile(contract, e.File);
+    }
+
+    string DateToString(DateTime d)
+    {
+        return $"{d.Day}/{d.Month}/{d.Year}";
+    }
+
+}
